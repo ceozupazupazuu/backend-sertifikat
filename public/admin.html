@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Panel Sertifikat — Kelola Sertifikat Produk</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --border:#2a2f3a;
+    --text:#e8eaed; --muted:#9aa3b2; --accent:#4f7cff; --accent2:#3a63d8;
+    --danger:#e5484d; --ok:#2fb379;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);}
+  .center{min-height:100vh;display:flex;align-items:center;justify-content:center;}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:32px;width:100%;max-width:360px;}
+  .card h1{font-size:18px;margin:0 0 20px;}
+  label{display:block;font-size:13px;color:var(--muted);margin:12px 0 6px;}
+  input[type=text],input[type=password],input[type=file]{
+    width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);
+    background:var(--panel2);color:var(--text);font-size:14px;
+  }
+  button{cursor:pointer;border:none;border-radius:8px;font-size:14px;padding:10px 16px;font-weight:600;}
+  .btn-primary{background:var(--accent);color:#fff;}
+  .btn-primary:hover{background:var(--accent2);}
+  .btn-secondary{background:var(--panel2);color:var(--text);border:1px solid var(--border);}
+  .btn-danger{background:var(--danger);color:#fff;}
+  .btn-block{width:100%;margin-top:18px;}
+  .error{color:var(--danger);font-size:13px;margin-top:10px;display:none;}
+
+  header{display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid var(--border);}
+  header h1{font-size:16px;margin:0;}
+  header .sub{color:var(--muted);font-size:12px;}
+  main{padding:24px;max-width:1100px;margin:0 auto;}
+  .toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:12px;flex-wrap:wrap;}
+  .bulk-actions{display:flex;gap:8px;align-items:center;}
+  .bulk-actions span{color:var(--muted);font-size:13px;}
+  table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--border);border-radius:12px;overflow:hidden;}
+  th,td{padding:12px 14px;text-align:left;border-bottom:1px solid var(--border);font-size:14px;}
+  th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.03em;}
+  tr:last-child td{border-bottom:none;}
+  .thumb{width:48px;height:48px;border-radius:6px;object-fit:cover;background:var(--panel2);display:block;}
+  .no-photo{width:48px;height:48px;border-radius:6px;background:var(--panel2);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:11px;}
+  .row-actions{display:flex;gap:8px;}
+  .row-actions button{padding:6px 10px;font-size:12px;}
+  .empty{padding:40px;text-align:center;color:var(--muted);}
+
+  .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:20px;}
+  .modal{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:24px;width:100%;max-width:420px;}
+  .modal h2{margin:0 0 16px;font-size:16px;}
+  .modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px;}
+  .preview{margin-top:10px;max-width:100%;max-height:160px;border-radius:8px;display:none;}
+  .hidden{display:none !important;}
+  .toast{position:fixed;bottom:20px;right:20px;background:var(--ok);color:#fff;padding:12px 18px;border-radius:8px;font-size:14px;display:none;}
+  .toast.error{background:var(--danger);}
+</style>
+</head>
+<body>
+
+  <!-- LOGIN -->
+  <div id="loginView" class="center">
+    <form id="loginForm" class="card">
+      <h1>Masuk ke Panel Sertifikat</h1>
+      <label>Username</label>
+      <input type="text" id="loginUser" autocomplete="username" required />
+      <label>Password</label>
+      <input type="password" id="loginPass" autocomplete="current-password" required />
+      <button type="submit" class="btn-primary btn-block">Masuk</button>
+      <div class="error" id="loginError"></div>
+    </form>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div id="appView" class="hidden">
+    <header>
+      <div>
+        <h1>Panel Sertifikat</h1>
+        <div class="sub">kelola SKU, nama produk & foto sertifikat</div>
+      </div>
+      <button class="btn-secondary" id="logoutBtn">keluar</button>
+    </header>
+    <main>
+      <div class="toolbar">
+        <div class="bulk-actions">
+          <span id="selectedCount">0 dipilih</span>
+          <button class="btn-danger" id="bulkDeleteBtn" disabled>hapus terpilih</button>
+        </div>
+        <button class="btn-primary" id="addBtn">+ tambah sertifikat</button>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th style="width:36px;"><input type="checkbox" id="selectAll" /></th>
+            <th style="width:64px;">foto</th>
+            <th>sku</th>
+            <th>nama produk</th>
+            <th style="width:140px;">aksi</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+      <div class="empty hidden" id="emptyState">belum ada sertifikat. tambahkan sertifikat pertama Anda.</div>
+    </main>
+  </div>
+
+  <!-- ADD/EDIT MODAL -->
+  <div class="modal-backdrop" id="modalBackdrop">
+    <div class="modal">
+      <h2 id="modalTitle">Tambah Sertifikat</h2>
+      <form id="certForm">
+        <input type="hidden" id="certId" />
+        <label>SKU</label>
+        <input type="text" id="certSku" required placeholder="contoh: SKU-10245" />
+        <label>Nama Produk</label>
+        <input type="text" id="certName" required placeholder="contoh: Meridian Oak Watch" />
+        <label>Foto Sertifikat <span id="photoOptionalNote" class="hidden">(kosongkan jika tidak diganti)</span></label>
+        <input type="file" id="certPhoto" accept=".jpg,.jpeg,.png,.webp" />
+        <img id="certPreview" class="preview" />
+        <div class="error" id="formError"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" id="cancelBtn">batal</button>
+          <button type="submit" class="btn-primary" id="saveBtn">simpan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let certificates = [];
+let selectedIds = new Set();
+
+function showToast(msg, isError=false){
+  const t = $('toast');
+  t.textContent = msg;
+  t.className = 'toast' + (isError ? ' error' : '');
+  t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', 3000);
+}
+
+// ---------- Auth ----------
+async function checkAuth(){
+  const r = await fetch('/admin/api/me');
+  const data = await r.json();
+  if (data.authed) {
+    $('loginView').classList.add('hidden');
+    $('appView').classList.remove('hidden');
+    loadCertificates();
+  } else {
+    $('appView').classList.add('hidden');
+    $('loginView').classList.remove('hidden');
+  }
+}
+
+$('loginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('loginError').style.display = 'none';
+  const username = $('loginUser').value;
+  const password = $('loginPass').value;
+  const r = await fetch('/admin/login', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ username, password })
+  });
+  const data = await r.json();
+  if (!r.ok) {
+    $('loginError').textContent = data.error || 'Login gagal';
+    $('loginError').style.display = 'block';
+    return;
+  }
+  $('loginForm').reset();
+  checkAuth();
+});
+
+$('logoutBtn').addEventListener('click', async () => {
+  await fetch('/admin/logout', { method: 'POST' });
+  checkAuth();
+});
+
+// ---------- Load & render ----------
+async function loadCertificates(){
+  const r = await fetch('/admin/api/certificates');
+  if (r.status === 401) return checkAuth();
+  certificates = await r.json();
+  selectedIds.clear();
+  renderTable();
+}
+
+function renderTable(){
+  const body = $('tableBody');
+  body.innerHTML = '';
+  $('emptyState').classList.toggle('hidden', certificates.length > 0);
+
+  certificates.forEach(c => {
+    const tr = document.createElement('tr');
+
+    const tdCheck = document.createElement('td');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = selectedIds.has(c.id);
+    cb.addEventListener('change', () => {
+      if (cb.checked) selectedIds.add(c.id); else selectedIds.delete(c.id);
+      updateBulkUI();
+    });
+    tdCheck.appendChild(cb);
+
+    const tdPhoto = document.createElement('td');
+    if (c.photo_url) {
+      const img = document.createElement('img');
+      img.src = c.photo_url;
+      img.className = 'thumb';
+      tdPhoto.appendChild(img);
+    } else {
+      const div = document.createElement('div');
+      div.className = 'no-photo';
+      div.textContent = 'n/a';
+      tdPhoto.appendChild(div);
+    }
+
+    const tdSku = document.createElement('td');
+    tdSku.textContent = c.sku;
+
+    const tdName = document.createElement('td');
+    tdName.textContent = c.product_name;
+
+    const tdActions = document.createElement('td');
+    tdActions.className = 'row-actions';
+    const editBtn = document.createElement('button');
+    editBtn.className = 'btn-secondary';
+    editBtn.textContent = 'edit';
+    editBtn.addEventListener('click', () => openModal(c));
+    const delBtn = document.createElement('button');
+    delBtn.className = 'btn-danger';
+    delBtn.textContent = 'hapus';
+    delBtn.addEventListener('click', () => deleteCert(c.id));
+    tdActions.appendChild(editBtn);
+    tdActions.appendChild(delBtn);
+
+    tr.append(tdCheck, tdPhoto, tdSku, tdName, tdActions);
+    body.appendChild(tr);
+  });
+
+  $('selectAll').checked = certificates.length > 0 && selectedIds.size === certificates.length;
+  updateBulkUI();
+}
+
+function updateBulkUI(){
+  $('selectedCount').textContent = `${selectedIds.size} dipilih`;
+  $('bulkDeleteBtn').disabled = selectedIds.size === 0;
+}
+
+$('selectAll').addEventListener('change', (e) => {
+  if (e.target.checked) certificates.forEach(c => selectedIds.add(c.id));
+  else selectedIds.clear();
+  renderTable();
+});
+
+$('bulkDeleteBtn').addEventListener('click', async () => {
+  if (!confirm(`Hapus ${selectedIds.size} sertifikat terpilih?`)) return;
+  const r = await fetch('/admin/api/certificates/bulk-delete', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ ids: Array.from(selectedIds) })
+  });
+  if (r.ok) { showToast('Sertifikat terpilih dihapus'); loadCertificates(); }
+  else showToast('Gagal menghapus', true);
+});
+
+async function deleteCert(id){
+  if (!confirm('Hapus sertifikat ini?')) return;
+  const r = await fetch(`/admin/api/certificates/${id}`, { method: 'DELETE' });
+  if (r.ok) { showToast('Sertifikat dihapus'); loadCertificates(); }
+  else showToast('Gagal menghapus', true);
+}
+
+// ---------- Modal (add/edit) ----------
+function openModal(cert=null){
+  $('formError').style.display = 'none';
+  $('certForm').reset();
+  $('certPreview').style.display = 'none';
+  if (cert) {
+    $('modalTitle').textContent = 'Edit Sertifikat';
+    $('certId').value = cert.id;
+    $('certSku').value = cert.sku;
+    $('certName').value = cert.product_name;
+    $('photoOptionalNote').classList.remove('hidden');
+    if (cert.photo_url) {
+      $('certPreview').src = cert.photo_url;
+      $('certPreview').style.display = 'block';
+    }
+  } else {
+    $('modalTitle').textContent = 'Tambah Sertifikat';
+    $('certId').value = '';
+    $('photoOptionalNote').classList.add('hidden');
+  }
+  $('modalBackdrop').style.display = 'flex';
+}
+
+function closeModal(){
+  $('modalBackdrop').style.display = 'none';
+}
+
+$('addBtn').addEventListener('click', () => openModal());
+$('cancelBtn').addEventListener('click', closeModal);
+$('modalBackdrop').addEventListener('click', (e) => { if (e.target.id === 'modalBackdrop') closeModal(); });
+
+$('certPhoto').addEventListener('change', () => {
+  const file = $('certPhoto').files[0];
+  if (!file) return;
+  const url = URL.createObjectURL(file);
+  $('certPreview').src = url;
+  $('certPreview').style.display = 'block';
+});
+
+$('certForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('formError').style.display = 'none';
+
+  const id = $('certId').value;
+  const fd = new FormData();
+  fd.append('sku', $('certSku').value.trim());
+  fd.append('product_name', $('certName').value.trim());
+  const file = $('certPhoto').files[0];
+  if (file) fd.append('photo', file);
+
+  if (!id && !file) {
+    $('formError').textContent = 'Foto sertifikat wajib diisi untuk sertifikat baru.';
+    $('formError').style.display = 'block';
+    return;
+  }
+
+  const url = id ? `/admin/api/certificates/${id}` : '/admin/api/certificates';
+  const method = id ? 'PUT' : 'POST';
+
+  const r = await fetch(url, { method, body: fd });
+  const data = await r.json();
+  if (!r.ok) {
+    $('formError').textContent = data.error || 'Gagal menyimpan';
+    $('formError').style.display = 'block';
+    return;
+  }
+  closeModal();
+  showToast('Sertifikat disimpan');
+  loadCertificates();
+});
+
+checkAuth();
+</script>
+</body>
+</html>
