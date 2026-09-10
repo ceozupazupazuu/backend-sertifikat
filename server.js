@@ -111,6 +111,7 @@ app.post('/admin/logout', (req, res) => {
 });
 
 app.get('/admin/api/me', (req, res) => {
+ res.set('Cache-Control', 'no-store');
   res.json({ authed: !!(req.session && req.session.authed) });
 });
 
