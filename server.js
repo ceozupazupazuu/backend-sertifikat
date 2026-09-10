@@ -11,9 +11,6 @@ const app = express();
 app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
 
-// ---------------------------------------------------------------------------
-// Database
-// ---------------------------------------------------------------------------
 const DATA_DIR = path.join(__dirname, 'data');
 fs.mkdirSync(DATA_DIR, { recursive: true });
 const db = new Database(path.join(DATA_DIR, 'certificates.db'));
@@ -29,9 +26,6 @@ db.exec(`
   );
 `);
 
-// ---------------------------------------------------------------------------
-// Uploads
-// ---------------------------------------------------------------------------
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
@@ -45,7 +39,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 8 * 1024 * 1024 }, // 8MB
+  limits: { fileSize: 8 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const allowed = ['.jpg', '.jpeg', '.png', '.webp'];
     const ext = path.extname(file.originalname).toLowerCase();
@@ -54,13 +48,16 @@ const upload = multer({
   }
 });
 
-// ---------------------------------------------------------------------------
-// Middleware
-// ---------------------------------------------------------------------------
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '7d' }));
 app.use('/admin/assets', express.static(path.join(__dirname, 'public')));
+
+app.use('/api', (req, res, next) => {
+  res.header('Access-Control-Allow-Origin', 'https://sertifikat.zupazupazuu.id');
+  res.header('Access-Control-Allow-Methods', 'GET');
+  next();
+});
 
 app.use(session({
   secret: process.env.SESSION_SECRET || 'please-change-this-secret',
@@ -68,7 +65,7 @@ app.use(session({
   saveUninitialized: false,
   cookie: {
     httpOnly: true,
-    maxAge: 8 * 60 * 60 * 1000, // 8h
+    maxAge: 8 * 60 * 60 * 1000,
     secure: process.env.NODE_ENV === 'production'
   }
 }));
@@ -78,18 +75,17 @@ function requireAuth(req, res, next) {
   return res.status(401).json({ error: 'Unauthorized' });
 }
 
+const BACKEND_ORIGIN = 'https://backend-sertifikat-production.up.railway.app';
+
 function toPublic(row) {
   return {
     id: row.id,
     sku: row.sku,
     product_name: row.product_name,
-    photo_url: row.photo_filename ? `/uploads/${row.photo_filename}` : null
+    photo_url: row.photo_filename ? `${BACKEND_ORIGIN}/uploads/${row.photo_filename}` : null
   };
 }
 
-// ---------------------------------------------------------------------------
-// Auth routes
-// ---------------------------------------------------------------------------
 app.post('/admin/login', (req, res) => {
   const { username, password } = req.body || {};
   const ADMIN_USER = process.env.ADMIN_USER || 'admin';
@@ -112,13 +108,10 @@ app.post('/admin/logout', (req, res) => {
 });
 
 app.get('/admin/api/me', (req, res) => {
- res.set('Cache-Control', 'no-store');
+  res.set('Cache-Control', 'no-store');
   res.json({ authed: !!(req.session && req.session.authed) });
 });
 
-// ---------------------------------------------------------------------------
-// Admin CRUD API (protected)
-// ---------------------------------------------------------------------------
 app.get('/admin/api/certificates', requireAuth, (req, res) => {
   const rows = db.prepare('SELECT * FROM certificates ORDER BY id DESC').all();
   res.json(rows.map(toPublic));
@@ -203,9 +196,6 @@ app.post('/admin/api/certificates/bulk-delete', requireAuth, (req, res) => {
   res.json({ ok: true, deleted: rows.length });
 });
 
-// ---------------------------------------------------------------------------
-// Public API — used by the certificate-verification frontend
-// ---------------------------------------------------------------------------
 app.get('/api/certificates/search', (req, res) => {
   const q = (req.query.q || '').trim().toLowerCase();
   if (!q) return res.json([]);
@@ -222,18 +212,12 @@ app.get('/api/certificates', (req, res) => {
   res.json(rows.map(toPublic));
 });
 
-// ---------------------------------------------------------------------------
-// Admin panel (static HTML, auth handled client-side via /admin/api/me)
-// ---------------------------------------------------------------------------
 app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
 app.get('/', (req, res) => res.redirect('/admin'));
 
-// ---------------------------------------------------------------------------
-// Error handler (e.g. multer file-type / size errors)
-// ---------------------------------------------------------------------------
 app.use((err, req, res, next) => {
   if (err) return res.status(400).json({ error: err.message });
   next();
