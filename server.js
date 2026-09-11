@@ -270,10 +270,6 @@ app.post('/admin/api/certificates/bulk-delete', requireAuth, (req, res) => {
   res.json({ ok: true, deleted: rows.length });
 });
 
-// Bulk create from an Excel file: expects columns "SKU" and "Product Name".
-// The SKU cell may contain multiple SKUs separated by commas — each row
-// becomes one certificate covering all of its SKUs. Existing certificates
-// and photos are untouched; this endpoint only creates new ones.
 app.post('/admin/api/certificates/bulk-upload', requireAuth, uploadExcel.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
@@ -293,42 +289,54 @@ app.post('/admin/api/certificates/bulk-upload', requireAuth, uploadExcel.single(
     return '';
   }
 
-  const insertCert = db.prepare('INSERT INTO certificates (product_name) VALUES (?)');
-  const insertSku = db.prepare('INSERT INTO certificate_skus (certificate_id, sku) VALUES (?, ?)');
-
-  let created = 0;
+  const groups = new Map();
   const skipped = [];
 
   rows.forEach((row, idx) => {
     const rowNum = idx + 2;
     const skuRaw = pick(row, 'SKU', 'Sku', 'sku');
     const nameRaw = pick(row, 'Product Name', 'product name', 'ProductName', 'Nama Produk');
-    const skus = String(skuRaw).split(',').map(s => s.trim()).filter(Boolean);
+    const rowSkus = String(skuRaw).split(',').map(s => s.trim()).filter(Boolean);
     const product_name = String(nameRaw).trim();
 
-    if (skus.length === 0 && !product_name) return;
+    if (rowSkus.length === 0 && !product_name) return;
 
-    if (skus.length === 0 || !product_name) {
+    if (rowSkus.length === 0 || !product_name) {
       skipped.push({ row: rowNum, reason: 'Missing SKU or Product Name' });
       return;
     }
 
+    if (!groups.has(product_name)) groups.set(product_name, { skus: new Set(), rows: [] });
+    const group = groups.get(product_name);
+    rowSkus.forEach(s => group.skus.add(s));
+    group.rows.push(rowNum);
+  });
+
+  const insertCert = db.prepare('INSERT INTO certificates (product_name) VALUES (?)');
+  const insertSku = db.prepare('INSERT INTO certificate_skus (certificate_id, sku) VALUES (?, ?)');
+
+  let created = 0;
+
+  for (const [product_name, group] of groups) {
+    const skus = Array.from(group.skus);
     try {
-      const insertRowTx = db.transaction(() => {
+      const insertGroupTx = db.transaction(() => {
         const info = insertCert.run(product_name);
         for (const sku of skus) insertSku.run(info.lastInsertRowid, sku);
       });
-      insertRowTx();
+      insertGroupTx();
       created++;
     } catch (e) {
       skipped.push({
-        row: rowNum,
-        reason: String(e.message).includes('UNIQUE') ? 'One or more SKUs already exist' : e.message
+        row: `${group.rows[0]}-${group.rows[group.rows.length - 1]}`,
+        reason: String(e.message).includes('UNIQUE')
+          ? `One or more SKUs already exist (product: "${product_name}")`
+          : e.message
       });
     }
-  });
+  }
 
-  res.json({ created, skipped });
+  res.json({ created, skipped, groupsFound: groups.size });
 });
 
 app.get('/api/certificates/search', (req, res) => {
