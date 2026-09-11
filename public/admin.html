@@ -85,6 +85,8 @@
           <span id="selectedCount">0 dipilih</span>
           <button class="btn-danger" id="bulkDeleteBtn" disabled>hapus terpilih</button>
         </div>
+        <button class="btn-secondary" id="bulkUploadBtn">upload massal (excel)</button>
+        <input type="file" id="bulkUploadInput" accept=".xlsx,.xls" class="hidden" />
         <button class="btn-primary" id="addBtn">+ tambah sertifikat</button>
       </div>
 
@@ -301,6 +303,24 @@ function closeModal(){
 }
 
 $('addBtn').addEventListener('click', () => openModal());
+
+$('bulkUploadBtn').addEventListener('click', () => $('bulkUploadInput').click());
+$('bulkUploadInput').addEventListener('change', async () => {
+  const file = $('bulkUploadInput').files[0];
+  if (!file) return;
+  const fd = new FormData();
+  fd.append('file', file);
+  const r = await fetch('/admin/api/certificates/bulk-upload', { method: 'POST', body: fd });
+  const data = await r.json();
+  $('bulkUploadInput').value = '';
+  if (!r.ok) { showToast(data.error || 'Gagal upload', true); return; }
+  let msg = `${data.created} sertifikat ditambahkan`;
+  const hasSkipped = data.skipped && data.skipped.length > 0;
+  if (hasSkipped) msg += `, ${data.skipped.length} baris dilewati (lihat konsol)`;
+  showToast(msg, hasSkipped);
+  if (hasSkipped) console.log('Baris yang dilewati:', data.skipped);
+  loadCertificates();
+});
 $('cancelBtn').addEventListener('click', closeModal);
 $('modalBackdrop').addEventListener('click', (e) => { if (e.target.id === 'modalBackdrop') closeModal(); });
 
