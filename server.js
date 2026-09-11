@@ -14,17 +14,51 @@ const PORT = process.env.PORT || 3000;
 const DATA_DIR = path.join(__dirname, 'data');
 fs.mkdirSync(DATA_DIR, { recursive: true });
 const db = new Database(path.join(DATA_DIR, 'certificates.db'));
+db.pragma('foreign_keys = ON');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS certificates (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    sku            TEXT NOT NULL UNIQUE,
     product_name   TEXT NOT NULL,
     photo_filename TEXT,
     created_at     TEXT DEFAULT (datetime('now')),
     updated_at     TEXT DEFAULT (datetime('now'))
   );
+
+  CREATE TABLE IF NOT EXISTS certificate_skus (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    certificate_id INTEGER NOT NULL,
+    sku            TEXT NOT NULL UNIQUE,
+    FOREIGN KEY (certificate_id) REFERENCES certificates(id) ON DELETE CASCADE
+  );
 `);
+
+const hasLegacySkuColumn = db.prepare("PRAGMA table_info(certificates)").all().some(col => col.name === 'sku');
+if (hasLegacySkuColumn) {
+  db.pragma('foreign_keys = OFF');
+  const migrate = db.transaction(() => {
+    db.exec(`
+      CREATE TABLE certificates_migrated (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_name   TEXT NOT NULL,
+        photo_filename TEXT,
+        created_at     TEXT DEFAULT (datetime('now')),
+        updated_at     TEXT DEFAULT (datetime('now'))
+      );
+      INSERT INTO certificates_migrated (id, product_name, photo_filename, created_at, updated_at)
+        SELECT id, product_name, photo_filename, created_at, updated_at FROM certificates;
+    `);
+    const insertSku = db.prepare('INSERT OR IGNORE INTO certificate_skus (certificate_id, sku) VALUES (?, ?)');
+    const oldRows = db.prepare("SELECT id, sku FROM certificates WHERE sku IS NOT NULL AND sku != ''").all();
+    oldRows.forEach(r => insertSku.run(r.id, r.sku));
+    db.exec(`
+      DROP TABLE certificates;
+      ALTER TABLE certificates_migrated RENAME TO certificates;
+    `);
+  });
+  migrate();
+  db.pragma('foreign_keys = ON');
+}
 
 const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -80,10 +114,13 @@ function requireAuth(req, res, next) {
 
 const BACKEND_ORIGIN = 'https://backend-sertifikat-production.up.railway.app';
 
+const getSkusStmt = db.prepare('SELECT sku FROM certificate_skus WHERE certificate_id = ? ORDER BY id');
+
 function toPublic(row) {
+  const skus = getSkusStmt.all(row.id).map(r => r.sku);
   return {
     id: row.id,
-    sku: row.sku,
+    skus,
     product_name: row.product_name,
     photo_url: row.photo_filename ? `${BACKEND_ORIGIN}/uploads/${row.photo_filename}` : null
   };
@@ -121,24 +158,30 @@ app.get('/admin/api/certificates', requireAuth, (req, res) => {
 });
 
 app.post('/admin/api/certificates', requireAuth, upload.single('photo'), (req, res) => {
-  const sku = (req.body.sku || '').trim();
+  const skus = String(req.body.skus || '').split(',').map(s => s.trim()).filter(Boolean);
   const product_name = (req.body.product_name || '').trim();
 
-  if (!sku || !product_name) {
-    return res.status(400).json({ error: 'sku and product_name are required' });
+  if (skus.length === 0 || !product_name) {
+    return res.status(400).json({ error: 'at least one SKU and product_name are required' });
   }
 
   const photo_filename = req.file ? req.file.filename : null;
 
+  const insertCert = db.prepare('INSERT INTO certificates (product_name, photo_filename) VALUES (?, ?)');
+  const insertSku = db.prepare('INSERT INTO certificate_skus (certificate_id, sku) VALUES (?, ?)');
+  const createTx = db.transaction((skus) => {
+    const info = insertCert.run(product_name, photo_filename);
+    for (const sku of skus) insertSku.run(info.lastInsertRowid, sku);
+    return info.lastInsertRowid;
+  });
+
   try {
-    const info = db
-      .prepare('INSERT INTO certificates (sku, product_name, photo_filename) VALUES (?, ?, ?)')
-      .run(sku, product_name, photo_filename);
-    const row = db.prepare('SELECT * FROM certificates WHERE id = ?').get(info.lastInsertRowid);
+    const certId = createTx(skus);
+    const row = db.prepare('SELECT * FROM certificates WHERE id = ?').get(certId);
     res.status(201).json(toPublic(row));
   } catch (e) {
     if (String(e.message).includes('UNIQUE')) {
-      return res.status(409).json({ error: `SKU "${sku}" already exists` });
+      return res.status(409).json({ error: 'One or more SKUs already exist on another certificate' });
     }
     res.status(500).json({ error: e.message });
   }
@@ -149,7 +192,6 @@ app.put('/admin/api/certificates/:id', requireAuth, upload.single('photo'), (req
   const existing = db.prepare('SELECT * FROM certificates WHERE id = ?').get(id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
 
-  const sku = (req.body.sku || existing.sku).trim();
   const product_name = (req.body.product_name || existing.product_name).trim();
   let photo_filename = existing.photo_filename;
 
@@ -160,15 +202,32 @@ app.put('/admin/api/certificates/:id', requireAuth, upload.single('photo'), (req
     photo_filename = req.file.filename;
   }
 
-  try {
+  let skus = null;
+  if (typeof req.body.skus === 'string') {
+    skus = req.body.skus.split(',').map(s => s.trim()).filter(Boolean);
+    if (skus.length === 0) {
+      return res.status(400).json({ error: 'at least one SKU is required' });
+    }
+  }
+
+  const insertSku = db.prepare('INSERT INTO certificate_skus (certificate_id, sku) VALUES (?, ?)');
+  const updateTx = db.transaction(() => {
     db.prepare(
-      "UPDATE certificates SET sku=?, product_name=?, photo_filename=?, updated_at=datetime('now') WHERE id=?"
-    ).run(sku, product_name, photo_filename, id);
+      "UPDATE certificates SET product_name=?, photo_filename=?, updated_at=datetime('now') WHERE id=?"
+    ).run(product_name, photo_filename, id);
+    if (skus) {
+      db.prepare('DELETE FROM certificate_skus WHERE certificate_id = ?').run(id);
+      for (const sku of skus) insertSku.run(id, sku);
+    }
+  });
+
+  try {
+    updateTx();
     const row = db.prepare('SELECT * FROM certificates WHERE id = ?').get(id);
     res.json(toPublic(row));
   } catch (e) {
     if (String(e.message).includes('UNIQUE')) {
-      return res.status(409).json({ error: `SKU "${sku}" already exists` });
+      return res.status(409).json({ error: 'One or more SKUs already exist on another certificate' });
     }
     res.status(500).json({ error: e.message });
   }
@@ -205,7 +264,10 @@ app.get('/api/certificates/search', (req, res) => {
   if (!q) return res.json([]);
   const rows = db
     .prepare(
-      `SELECT * FROM certificates WHERE lower(sku) LIKE ? OR lower(product_name) LIKE ? ORDER BY id DESC`
+      `SELECT DISTINCT c.* FROM certificates c
+       LEFT JOIN certificate_skus s ON s.certificate_id = c.id
+       WHERE lower(s.sku) LIKE ? OR lower(c.product_name) LIKE ?
+       ORDER BY c.id DESC`
     )
     .all(`%${q}%`, `%${q}%`);
   res.json(rows.map(toPublic));
