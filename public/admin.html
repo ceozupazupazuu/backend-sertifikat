@@ -110,8 +110,8 @@
       <h2 id="modalTitle">Tambah Sertifikat</h2>
       <form id="certForm">
         <input type="hidden" id="certId" />
-        <label>SKU</label>
-        <input type="text" id="certSku" required placeholder="contoh: SKU-10245" />
+        <label>SKU (pisahkan dengan koma jika lebih dari satu)</label>
+        <textarea id="certSkus" required placeholder="contoh: SKU-10245, SKU-10246" rows="2" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--panel2);color:var(--text);font-size:14px;font-family:inherit;resize:vertical;"></textarea>
         <label>Nama Produk</label>
         <input type="text" id="certName" required placeholder="contoh: Meridian Oak Watch" />
         <label>Foto Sertifikat <span id="photoOptionalNote" class="hidden">(kosongkan jika tidak diganti)</span></label>
@@ -141,7 +141,6 @@ function showToast(msg, isError=false){
   setTimeout(() => t.style.display = 'none', 3000);
 }
 
-// ---------- Auth ----------
 async function checkAuth(){
   const r = await fetch('/admin/api/me');
   const data = await r.json();
@@ -180,7 +179,6 @@ $('logoutBtn').addEventListener('click', async () => {
   checkAuth();
 });
 
-// ---------- Load & render ----------
 async function loadCertificates(){
   const r = await fetch('/admin/api/certificates');
   if (r.status === 401) return checkAuth();
@@ -221,7 +219,7 @@ function renderTable(){
     }
 
     const tdSku = document.createElement('td');
-    tdSku.textContent = c.sku;
+    tdSku.textContent = (c.skus || []).join(', ');
 
     const tdName = document.createElement('td');
     tdName.textContent = c.product_name;
@@ -276,7 +274,6 @@ async function deleteCert(id){
   else showToast('Gagal menghapus', true);
 }
 
-// ---------- Modal (add/edit) ----------
 function openModal(cert=null){
   $('formError').style.display = 'none';
   $('certForm').reset();
@@ -284,7 +281,7 @@ function openModal(cert=null){
   if (cert) {
     $('modalTitle').textContent = 'Edit Sertifikat';
     $('certId').value = cert.id;
-    $('certSku').value = cert.sku;
+    $('certSkus').value = (cert.skus || []).join(', ');
     $('certName').value = cert.product_name;
     $('photoOptionalNote').classList.remove('hidden');
     if (cert.photo_url) {
@@ -321,7 +318,7 @@ $('certForm').addEventListener('submit', async (e) => {
 
   const id = $('certId').value;
   const fd = new FormData();
-  fd.append('sku', $('certSku').value.trim());
+  fd.append('skus', $('certSkus').value.trim());
   fd.append('product_name', $('certName').value.trim());
   const file = $('certPhoto').files[0];
   if (file) fd.append('photo', file);
