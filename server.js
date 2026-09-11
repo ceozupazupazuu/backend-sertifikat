@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
+const FileStore = require('session-file-store')(session);
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -109,6 +110,7 @@ app.use('/api', (req, res, next) => {
 });
 
 app.use(session({
+  store: new FileStore({ path: path.join(DATA_DIR, 'sessions'), logFn: () => {} }),
   secret: process.env.SESSION_SECRET || 'please-change-this-secret',
   resave: false,
   saveUninitialized: false,
