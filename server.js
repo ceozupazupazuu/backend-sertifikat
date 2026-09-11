@@ -54,7 +54,10 @@ app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '7d' }));
 app.use('/admin/assets', express.static(path.join(__dirname, 'public')));
 
 app.use('/api', (req, res, next) => {
-  res.header('Access-Control-Allow-Origin', 'https://sertifikat.zupazupazuu.id');
+  const origin = req.headers.origin;
+  if (origin && origin.replace(/^https?:\/\//, '') === 'sertifikat.zupazupazuu.id') {
+    res.header('Access-Control-Allow-Origin', origin);
+  }
   res.header('Access-Control-Allow-Methods', 'GET');
   next();
 });
@@ -197,6 +200,7 @@ app.post('/admin/api/certificates/bulk-delete', requireAuth, (req, res) => {
 });
 
 app.get('/api/certificates/search', (req, res) => {
+  res.set('Cache-Control', 'no-store');
   const q = (req.query.q || '').trim().toLowerCase();
   if (!q) return res.json([]);
   const rows = db
@@ -208,6 +212,7 @@ app.get('/api/certificates/search', (req, res) => {
 });
 
 app.get('/api/certificates', (req, res) => {
+  res.set('Cache-Control', 'no-store');
   const rows = db.prepare('SELECT * FROM certificates ORDER BY id DESC').all();
   res.json(rows.map(toPublic));
 });
