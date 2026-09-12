@@ -349,10 +349,10 @@ app.get('/api/certificates/search', (req, res) => {
     .prepare(
       `SELECT DISTINCT c.* FROM certificates c
        LEFT JOIN certificate_skus s ON s.certificate_id = c.id
-       WHERE lower(s.sku) LIKE ?
+       WHERE lower(s.sku) = ?
        ORDER BY c.id DESC`
     )
-    .all(`%${q}%`);
+    .all(q);
   res.json(rows.map(toPublic));
 });
 
